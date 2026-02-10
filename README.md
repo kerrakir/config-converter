@@ -1,0 +1,1 @@
+Запускать в cmd из корневой папки - converter.exe -in examples\cisco_sample.txt -out result.txt -from cisco -to huawei

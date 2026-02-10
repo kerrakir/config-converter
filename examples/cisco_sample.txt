@@ -1,0 +1,58 @@
+vlan 10
+ name SALES
+exit
+
+vlan 20
+ name IT
+exit
+
+spanning-tree mode pvst
+
+interface GigabitEthernet0/0
+ description Uplink to ISP
+ ip address 192.0.2.2 255.255.255.252
+ ip nat outside
+ no shutdown
+exit
+
+interface GigabitEthernet0/1
+ description Access port for SALES
+ switchport mode access
+ switchport access vlan 10
+ no shutdown
+exit
+
+interface GigabitEthernet0/2
+ description Trunk to Switch
+ switchport mode trunk
+ switchport trunk allowed vlan 10,20
+ no shutdown
+exit
+
+interface Vlan10
+ description SALES SVI
+ ip address 10.0.10.1 255.255.255.0
+ ip nat inside
+ no shutdown
+exit
+
+interface Vlan20
+ description IT SVI
+ ip address 10.0.20.1 255.255.255.0
+ ip nat inside
+ no shutdown
+exit
+
+ip route 0.0.0.0 0.0.0.0 192.0.2.1
+
+router ospf 1
+ network 10.0.10.0 0.0.0.255 area 0
+ network 10.0.20.0 0.0.0.255 area 0
+ network 192.0.2.0 0.0.0.3 area 0
+exit
+
+access-list 1 permit 10.0.0.0 0.0.255.255
+ip nat inside source list 1 interface GigabitEthernet0/0 overload
+
+ip smtp server
+ip ftp server enable

@@ -1,0 +1,371 @@
+/main.go
+package main
+
+import (
+	"encoding/json"
+	"flag"
+	"fmt"
+	"os"
+
+	"converter/generator"
+	"converter/model"
+	"converter/parser"
+)
+
+func main() {
+	fmt.Println("Program started")
+	input := flag.String("in", "", "Input config file")
+	output := flag.String("out", "", "Output config file")
+	from := flag.String("from", "cisco", "Input type: cisco|huawei|json")
+	to := flag.String("to", "huawei", "Output type: huawei|cisco|json")
+	flag.Parse()
+
+	if *input == "" || *output == "" {
+		fmt.Println("Usage: converter -in <file> -out <file> -from cisco -to huawei")
+		os.Exit(1)
+	}
+
+	var cfg *model.Config
+	var err error
+
+	switch *from {
+	case "cisco":
+		cfg, err = parser.ParseCisco(*input)
+	case "huawei":
+		cfg, err = parser.ParseHuawei(*input)
+	case "json":
+		cfg = &model.Config{}
+		data, _ := os.ReadFile(*input)
+		json.Unmarshal(data, cfg)
+	default:
+		fmt.Println("Unsupported input format")
+		os.Exit(1)
+	}
+
+	if err != nil {
+		fmt.Println("Error:", err)
+		os.Exit(1)
+	}
+
+	switch *to {
+	case "json":
+		data, _ := json.MarshalIndent(cfg, "", "  ")
+		os.WriteFile(*output, data, 0644)
+	case "huawei":
+		result := generator.GenerateHuawei(cfg)
+		os.WriteFile(*output, []byte(result), 0644)
+	case "cisco":
+		result := generator.GenerateCisco(cfg)
+		os.WriteFile(*output, []byte(result), 0644)
+	default:
+		fmt.Println("Unsupported output format")
+		os.Exit(1)
+	}
+
+	fmt.Println("Conversion complete:", *output)
+}
+
+/parser/huawei.go
+package parser
+
+import (
+	"bufio"
+	"fmt"
+	"os"
+	"strings"
+
+	"converter/model"
+)
+
+func ParseHuawei(path string) (*model.Config, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	cfg := &model.Config{DeviceType: "huawei"}
+	scanner := bufio.NewScanner(file)
+	var currentInterface *model.Interface
+	var currentVlan *model.Vlan
+
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+
+		switch {
+		case strings.HasPrefix(line, "vlan "):
+			if currentVlan != nil {
+				cfg.Vlans = append(cfg.Vlans, *currentVlan)
+			}
+			var id int
+			fmt.Sscanf(line, "vlan %d", &id)
+			currentVlan = &model.Vlan{ID: id}
+
+		case strings.HasPrefix(line, "description ") && currentVlan != nil:
+			currentVlan.Name = strings.TrimPrefix(line, "description ")
+
+		case line == "quit" && currentVlan != nil:
+			cfg.Vlans = append(cfg.Vlans, *currentVlan)
+			currentVlan = nil
+
+		case strings.HasPrefix(line, "interface "):
+			if currentInterface != nil {
+				cfg.Interfaces = append(cfg.Interfaces, *currentInterface)
+			}
+			name := strings.TrimPrefix(line, "interface ")
+			currentInterface = &model.Interface{Name: name}
+
+		case strings.HasPrefix(line, "description ") && currentInterface != nil:
+			currentInterface.Description = strings.TrimPrefix(line, "description ")
+
+		case strings.HasPrefix(line, "port default vlan ") && currentInterface != nil:
+			fmt.Sscanf(line, "port default vlan %d", &currentInterface.Vlan)
+
+		case strings.HasPrefix(line, "ip address ") && currentInterface != nil:
+			parts := strings.Fields(line)
+			if len(parts) >= 3 {
+				currentInterface.IP = parts[2]
+			}
+
+		case line == "quit" && currentInterface != nil:
+			cfg.Interfaces = append(cfg.Interfaces, *currentInterface)
+			currentInterface = nil
+
+		case strings.HasPrefix(line, "ip route-static "):
+			parts := strings.Fields(line)
+			if len(parts) >= 5 {
+				cfg.Routes = append(cfg.Routes, model.Route{
+					Destination: parts[1],
+					Mask:        parts[2],
+					Gateway:     parts[3],
+				})
+			}
+		}
+	}
+
+	if currentInterface != nil {
+		cfg.Interfaces = append(cfg.Interfaces, *currentInterface)
+	}
+	if currentVlan != nil {
+		cfg.Vlans = append(cfg.Vlans, *currentVlan)
+	}
+
+	return cfg, nil
+}
+
+/parser/cisco.go
+package parser
+
+import (
+	"bufio"
+	"fmt"
+	"os"
+	"strings"
+
+	"converter/model"
+)
+
+func ParseCisco(path string) (*model.Config, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	cfg := &model.Config{DeviceType: "cisco"}
+
+	scanner := bufio.NewScanner(file)
+	var currentInterface *model.Interface
+	var currentVlan *model.Vlan
+
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "!") {
+			continue 
+		}
+
+		switch {
+		// VLAN
+		case strings.HasPrefix(line, "vlan "):
+			if currentVlan != nil {
+				cfg.Vlans = append(cfg.Vlans, *currentVlan)
+			}
+			var id int
+			fmt.Sscanf(line, "vlan %d", &id)
+			currentVlan = &model.Vlan{ID: id}
+
+		case strings.HasPrefix(line, "name ") && currentVlan != nil:
+			currentVlan.Name = strings.TrimPrefix(line, "name ")
+
+		case line == "exit" && currentVlan != nil:
+			cfg.Vlans = append(cfg.Vlans, *currentVlan)
+			currentVlan = nil
+
+		// Интерфейсы
+		case strings.HasPrefix(line, "interface "):
+			if currentInterface != nil {
+				cfg.Interfaces = append(cfg.Interfaces, *currentInterface)
+			}
+			name := strings.TrimPrefix(line, "interface ")
+			currentInterface = &model.Interface{Name: name}
+
+		case strings.HasPrefix(line, "description ") && currentInterface != nil:
+			currentInterface.Description = strings.TrimPrefix(line, "description ")
+
+		case strings.HasPrefix(line, "switchport access vlan ") && currentInterface != nil:
+			fmt.Sscanf(line, "switchport access vlan %d", &currentInterface.Vlan)
+
+		case strings.HasPrefix(line, "ip address ") && currentInterface != nil:
+			parts := strings.Fields(line)
+			if len(parts) >= 3 {
+				currentInterface.IP = parts[2]
+			}
+
+		case line == "exit" && currentInterface != nil:
+			cfg.Interfaces = append(cfg.Interfaces, *currentInterface)
+			currentInterface = nil
+
+		// Маршруты
+		case strings.HasPrefix(line, "ip route "):
+			parts := strings.Fields(line)
+			if len(parts) >= 5 {
+				cfg.Routes = append(cfg.Routes, model.Route{
+					Destination: parts[2],
+					Mask:        parts[3],
+					Gateway:     parts[4],
+				})
+			}
+		}
+	}
+
+	// финализируем незакрытые блоки
+	if currentInterface != nil {
+		cfg.Interfaces = append(cfg.Interfaces, *currentInterface)
+	}
+	if currentVlan != nil {
+		cfg.Vlans = append(cfg.Vlans, *currentVlan)
+	}
+
+	return cfg, nil
+}
+
+/model/config.go
+package model
+
+type Interface struct {
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+	Vlan        int    `json:"vlan,omitempty"`
+	IP          string `json:"ip,omitempty"`
+}
+
+type Vlan struct {
+	ID   int    `json:"id"`
+	Name string `json:"name,omitempty"`
+}
+
+type Route struct {
+	Destination string `json:"destination"`
+	Mask        string `json:"mask"`
+	Gateway     string `json:"gateway"`
+}
+
+type Config struct {
+	DeviceType string      `json:"device_type"` // "cisco" или "huawei"
+	Vlans      []Vlan      `json:"vlans,omitempty"`
+	Interfaces []Interface `json:"interfaces,omitempty"`
+	Routes     []Route     `json:"routes,omitempty"`
+}
+
+/generator/cisco.go
+package generator
+
+import (
+	"fmt"
+	"strings"
+
+	"converter/model"
+)
+
+func GenerateCisco(cfg *model.Config) string {
+	var sb strings.Builder
+
+	for _, v := range cfg.Vlans {
+		sb.WriteString(fmt.Sprintf("vlan %d\n", v.ID))
+		if v.Name != "" {
+			sb.WriteString(fmt.Sprintf(" name %s\n", v.Name))
+		}
+		sb.WriteString(" exit\n")
+	}
+
+	for _, i := range cfg.Interfaces {
+		sb.WriteString(fmt.Sprintf("interface %s\n", i.Name))
+		if i.Description != "" {
+			sb.WriteString(fmt.Sprintf(" description %s\n", i.Description))
+		}
+		if i.Vlan != 0 {
+			sb.WriteString(fmt.Sprintf(" switchport access vlan %d\n", i.Vlan))
+		}
+		if i.IP != "" {
+			sb.WriteString(fmt.Sprintf(" ip address %s 255.255.255.0\n", i.IP))
+		}
+		sb.WriteString(" exit\n")
+	}
+
+	for _, r := range cfg.Routes {
+		sb.WriteString(fmt.Sprintf("ip route %s %s %s\n", r.Destination, r.Mask, r.Gateway))
+	}
+
+	return sb.String()
+}
+
+/generator/huawei.go
+package generator
+
+import (
+	"fmt"
+	"strings"
+
+	"converter/model"
+)
+
+func GenerateHuawei(cfg *model.Config) string {
+	var sb strings.Builder
+
+	// VLAN
+	for _, v := range cfg.Vlans {
+		sb.WriteString(fmt.Sprintf("Vlan %d\n", v.ID))
+		if v.Name != "" {
+			sb.WriteString(fmt.Sprintf(" description %s\n", v.Name))
+		}
+		sb.WriteString("quit\n")
+	}
+
+	sb.WriteString("\n")
+
+	// Интерфейсы
+	for _, i := range cfg.Interfaces {
+		sb.WriteString(fmt.Sprintf("interface %s\n", i.Name))
+		if i.Description != "" {
+			sb.WriteString(fmt.Sprintf(" description %s\n", i.Description))
+		}
+		if i.Vlan != 0 {
+			sb.WriteString(" port link-type access\n")
+			sb.WriteString(fmt.Sprintf(" port default vlan %d\n", i.Vlan))
+		}
+		if i.IP != "" {
+			// В Huawei обычно формат "ip address <addr> <mask>"
+			sb.WriteString(fmt.Sprintf(" ip address %s 255.255.255.0\n", i.IP))
+		}
+		sb.WriteString("quit\n\n")
+	}
+
+	// Статическая маршрутизация
+	for _, r := range cfg.Routes {
+		sb.WriteString(fmt.Sprintf("ip route-static %s %s %s\n", r.Destination, r.Mask, r.Gateway))
+	}
+
+	return sb.String()
+}
+
+/examples/'тут будут конфиги'

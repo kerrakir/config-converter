@@ -1,0 +1,33 @@
+vlan 10
+ description SALES
+quit
+vlan 20
+ description IT
+quit
+
+interface GigabitEthernet0/0
+ description Uplink to ISP
+ ip address 192.0.2.2 255.255.255.0
+quit
+
+interface GigabitEthernet0/1
+ description Access port for SALES
+ port link-type access
+ port default vlan 10
+quit
+
+interface GigabitEthernet0/2
+ description Trunk to Switch
+quit
+
+interface Vlan10
+ description SALES SVI
+ ip address 10.0.10.1 255.255.255.0
+quit
+
+interface Vlan20
+ description IT SVI
+ ip address 10.0.20.1 255.255.255.0
+quit
+
+ip route-static 0.0.0.0 0.0.0.0 192.0.2.1
