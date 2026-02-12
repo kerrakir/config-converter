@@ -1,16 +1,31 @@
-## ПРОЕКТ В РАЗРАБОТКЕ
+# Converter Project
 
-## Как работает
+Конвертер сетевых конфигураций между Cisco, Huawei и JSON.
 
-Программа конвертирует сетевые конфигурации между Cisco и Huawei, а также в JSON формат.  
-Поддерживаются VLAN, access/trunk, L3 Vlanif, маршруты, OSPF, STP, NAT, SMTP и FTP.
+## Структура проекта
 
----
+- `cmd/converter` — CLI точка входа (`main.go`) и CLI-утилиты.
+- `parser` — парсеры исходных конфигов.
+- `generator` — генераторы целевых конфигов.
+- `model` — общая модель конфигурации.
+- `qt_gui` — GUI на Qt (PySide6).
+- `examples` — примеры входных/выходных конфигов.
+- `examples/outputs` — временные результаты конвертаций.
 
-## Как запускать
-
-В репозитории есть готовый исполняемый файл `converter.exe`.  
-Пример запуска для конвертации Cisco → Huawei:
+## CLI запуск
 
 ```bash
-converter.exe -in examples\cisco_sample.txt -out result.txt -from cisco -to huawei
+go run ./cmd/converter -in examples/cisco_sample.txt -out examples/huw.txt -from cisco -to huawei
+```
+
+Сборка бинарника:
+
+```bash
+go build -o converter.exe ./cmd/converter
+```
+
+## GUI запуск
+
+```bash
+python qt_gui/app.py
+```

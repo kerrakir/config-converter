@@ -17,6 +17,9 @@ func main() {
 	output := flag.String("out", "", "Output config file")
 	from := flag.String("from", "cisco", "Input type: cisco|huawei|json")
 	to := flag.String("to", "huawei", "Output type: huawei|cisco|json")
+	ifMap := flag.String("if-map", "", "Interface type mapping list, e.g. FastEthernet=GigabitEthernet,GigabitEthernet=10GE")
+	ifIndex := flag.String("if-index", "keep", "Interface index format: keep|2|3")
+	ifIndexPrefix := flag.String("if-index-prefix", "1", "Leading segment for 3-part indexes (e.g. 1 -> 1/0/1)")
 	flag.Parse()
 
 	if *input == "" || *output == "" {
@@ -45,25 +48,49 @@ func main() {
 		fmt.Println("Error:", err)
 		os.Exit(1)
 	}
-
-	switch *to {
-	case "json":
-		cfg = &model.Config{}
-		data, err := os.ReadFile(*input)
+	var mappings []interfaceMapping
+	if *ifMap != "" {
+		mappings, err = parseInterfaceMappings(*ifMap)
 		if err != nil {
 			fmt.Println("Error:", err)
 			os.Exit(1)
 		}
-		if err := json.Unmarshal(data, cfg); err != nil {
+	}
+	indexStyle := *ifIndex
+	if indexStyle != "keep" && indexStyle != "2" && indexStyle != "3" {
+		fmt.Println("Error: -if-index must be one of keep|2|3")
+		os.Exit(1)
+	}
+	if len(mappings) > 0 || indexStyle != "keep" {
+		applyInterfaceTransformations(cfg, mappings, interfaceTransformOptions{
+			indexStyle:      indexStyle,
+			threePartPrefix: *ifIndexPrefix,
+		})
+	}
+
+	switch *to {
+	case "json":
+		data, err := json.MarshalIndent(cfg, "", "  ")
+		if err != nil {
+			fmt.Println("Error:", err)
+			os.Exit(1)
+		}
+		if err := os.WriteFile(*output, data, 0644); err != nil {
 			fmt.Println("Error:", err)
 			os.Exit(1)
 		}
 	case "huawei":
 		result := generator.GenerateHuawei(cfg)
-		os.WriteFile(*output, []byte(result), 0644)
+		if err := os.WriteFile(*output, []byte(result), 0644); err != nil {
+			fmt.Println("Error:", err)
+			os.Exit(1)
+		}
 	case "cisco":
 		result := generator.GenerateCisco(cfg)
-		os.WriteFile(*output, []byte(result), 0644)
+		if err := os.WriteFile(*output, []byte(result), 0644); err != nil {
+			fmt.Println("Error:", err)
+			os.Exit(1)
+		}
 	default:
 		fmt.Println("Unsupported output format")
 		os.Exit(1)

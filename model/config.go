@@ -17,8 +17,9 @@ type OSPF struct {
 }
 
 type Vlan struct {
-	ID   int    `json:"id"`
-	Name string `json:"name,omitempty"`
+	ID         int    `json:"id"`
+	Name       string `json:"name,omitempty"`
+	TrunkVlans string `json:"trunk_vlans,omitempty"`
 }
 
 type Route struct {
@@ -32,14 +33,47 @@ type NAT struct {
 	Outside string `json:"outside"`
 }
 
+type NATPolicy struct {
+	ACLID    int    `json:"acl_id"`
+	Outside  string `json:"outside"`
+	Overload bool   `json:"overload,omitempty"`
+}
+
+type ACLRule struct {
+	Sequence int    `json:"sequence,omitempty"`
+	Action   string `json:"action"`
+	Protocol string `json:"protocol,omitempty"`
+	Source   string `json:"source,omitempty"`
+	Wildcard string `json:"wildcard,omitempty"`
+	SrcPort  string `json:"src_port,omitempty"`
+
+	Destination string `json:"destination,omitempty"`
+	DstWildcard string `json:"dst_wildcard,omitempty"`
+	DstPort     string `json:"dst_port,omitempty"`
+	Raw         string `json:"raw,omitempty"`
+}
+
+type ACL struct {
+	ID    int       `json:"id"`
+	Type  string    `json:"type,omitempty"`
+	Rules []ACLRule `json:"rules,omitempty"`
+}
+
 type Config struct {
 	DeviceType string      `json:"device_type"`
 	Vlans      []Vlan      `json:"vlans,omitempty"`
 	Interfaces []Interface `json:"interfaces,omitempty"`
 	Routes     []Route     `json:"routes,omitempty"`
 
-	OSPF    []OSPF  `json:"ospf,omitempty"`
-	NAT     []NAT   `json:"nat,omitempty"`
+	OSPF    []OSPF      `json:"ospf,omitempty"`
+	NAT     []NAT       `json:"nat,omitempty"`
+	NATRule []NATPolicy `json:"nat_rule,omitempty"`
+
+	OSPFRouterID        string   `json:"ospf_router_id,omitempty"`
+	OSPFPassiveDefault  bool     `json:"ospf_passive_default,omitempty"`
+	OSPFNoPassiveIfaces []string `json:"ospf_no_passive_ifaces,omitempty"`
+
+	ACLs    []ACL   `json:"acls,omitempty"`
 	Service Service `json:"service,omitempty"`
 	STP     STP     `json:"stp,omitempty"`
 }

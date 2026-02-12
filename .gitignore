@@ -1,0 +1,14 @@
+build/
+dist/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.toc
+*.pyz
+*.pkg
+converter.exe
+
+# Generated local outputs
+examples/outputs/
+examples/huw.txt
